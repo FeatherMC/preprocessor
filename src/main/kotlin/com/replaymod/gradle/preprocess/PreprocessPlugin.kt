@@ -69,6 +69,8 @@ class PreprocessPlugin : Plugin<Project> {
                 val overwriteResources = project.file("src/$name/resources").also { it.mkdirs() }
                 val specificJava = project.file("src/$name/java-specific").also { it.mkdirs() }
                 val specificResources = project.file("src/$name/resources-specific").also { it.mkdirs() }
+                val sharedJava = parent.file("shared/${projectNode.mcVersionName}/src/java").also {it.mkdirs() }
+                val sharedResources = parent.file("shared/${projectNode.mcVersionName}/src/resources").also { it.mkdirs() }
                 val preprocessedJava = File(project.buildDir, "preprocessed/$name/java")
                 val preprocessedResources = File(project.buildDir, "preprocessed/$name/resources")
 
@@ -89,7 +91,7 @@ class PreprocessPlugin : Plugin<Project> {
                 }
                 val sourceJavaTask = project.tasks.findByName("source${name.capitalize()}Java")
                 (sourceJavaTask ?: project.tasks["compile${cName}Java"]).dependsOn(preprocessJava)
-                java.setSrcDirs(listOf(specificJava, overwritesJava, preprocessedJava))
+                java.setSrcDirs(listOf(specificJava, overwritesJava, sharedJava, preprocessedJava))
 
                 if (kotlin) {
                     val overwritesKotlin = project.file("src/$name/kotlin").also { it.mkdirs() }
@@ -126,7 +128,7 @@ class PreprocessPlugin : Plugin<Project> {
                     patternAnnotation.convention(ext.patternAnnotation)
                 }
                 project.tasks["process${cName}Resources"].dependsOn(preprocessResources)
-                resources.setSrcDirs(listOf(specificResources, overwriteResources, preprocessedResources))
+                resources.setSrcDirs(listOf(specificResources, overwriteResources, sharedResources, preprocessedResources))
             }
 
             project.afterEvaluate {
