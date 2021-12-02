@@ -31,6 +31,10 @@ gradlePlugin {
             id = "com.replaymod.preprocess"
             implementationClass = "com.replaymod.gradle.preprocess.PreprocessPlugin"
         }
+        register("preprocess-root") {
+            id = "com.replaymod.preprocess-root"
+            implementationClass = "com.replaymod.gradle.preprocess.RootPreprocessPlugin"
+        }
     }
 }
 
@@ -53,7 +57,7 @@ repositories {
 dependencies {
     implementation(gradleApi())
     compile(localGroovy())
-    implementation("com.github.replaymod:remap:c2118df")
+    implementation("com.github.replaymod:remap:f9fe968")
     implementation("net.fabricmc:tiny-mappings-parser:0.2.1.13")
     testImplementation("io.kotest:kotest-runner-junit5-jvm:$kotestVersion")
     testImplementation("io.kotest:kotest-assertions-core-jvm:$kotestVersion")
