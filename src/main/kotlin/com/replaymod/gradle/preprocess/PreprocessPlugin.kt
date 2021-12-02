@@ -71,13 +71,11 @@ class PreprocessPlugin : Plugin<Project> {
                 val specificJava = project.file("src/$name/java-specific").also { it.mkdirs() }
                 val specificKotlin = project.file("src/$name/kotlin-specific").also { it.mkdirs() }
                 val specificResources = project.file("src/$name/resources-specific").also { it.mkdirs() }
-                val sharedJava = parent.file("shared/${projectNode.mcVersionName}/src/java").also {it.mkdirs() }
-                val sharedResources = parent.file("shared/${projectNode.mcVersionName}/src/resources").also { it.mkdirs() }
                 val preprocessedRoot = project.buildDir.resolve("preprocessed/$name")
 
                 val preprocessJava = project.tasks.register<PreprocessTask>("preprocess${cName}Java") {
                     inherited.tasks.findByPath("preprocess${cName}Java")?.let { dependsOn(it) }
-                    source = inherited.files(inheritedSourceSet.java.srcDirs)
+                    source = inherited.files(inheritedSourceSet.java.srcDirs.filter { !it.name.endsWith("specific") })
                     overwrites = overwritesJava
                     generated = preprocessedRoot.resolve("java")
                     compileTask(inherited.tasks["compile${cName}Java"] as AbstractCompile)
@@ -93,14 +91,14 @@ class PreprocessPlugin : Plugin<Project> {
                 }
                 val sourceJavaTask = project.tasks.findByName("source${name.capitalize()}Java")
                 (sourceJavaTask ?: project.tasks["compile${cName}Java"]).dependsOn(preprocessJava)
-                java.setSrcDirs(listOf(specificJava, overwritesJava, sharedJava, preprocessJava.map { it.generated!! }))
+                java.setSrcDirs(listOf(specificJava, overwritesJava, preprocessJava.map { it.generated!! }))
 
                 if (kotlin) {
                     val preprocessKotlin = project.tasks.register<PreprocessTask>("preprocess${cName}Kotlin") {
                         inherited.tasks.findByPath("preprocess${cName}Kotlin")?.let { dependsOn(it) }
                         source =
                             inherited.files(inheritedSourceSet.withGroovyBuilder { getProperty("kotlin") as SourceDirectorySet }.srcDirs.filter {
-                                it.endsWith("kotlin")
+                                !it.name.contains("specific") && it.endsWith("kotlin")
                             })
                         overwrites = overwritesKotlin
                         generated = preprocessedRoot.resolve("kotlin")
@@ -122,6 +120,7 @@ class PreprocessPlugin : Plugin<Project> {
                                 specificKotlin,
                                 overwritesKotlin,
                                 preprocessKotlin.map { it.generated!! },
+                                specificJava,
                                 overwritesJava,
                                 preprocessJava.map { it.generated!! },
                             ))
@@ -137,7 +136,7 @@ class PreprocessPlugin : Plugin<Project> {
                     patternAnnotation.convention(ext.patternAnnotation)
                 }
                 project.tasks["process${cName}Resources"].dependsOn(preprocessResources)
-                resources.setSrcDirs(listOf(specificResources, overwriteResources, sharedResources, preprocessResources.map { it.generated!! }))
+                resources.setSrcDirs(listOf(specificResources, overwriteResources, preprocessResources.map { it.generated!! }))
             }
 
             project.afterEvaluate {
