@@ -128,7 +128,7 @@ class PreprocessPlugin : Plugin<Project> {
 
                 val preprocessResources = project.tasks.register<PreprocessTask>("preprocess${cName}Resources") {
                     inherited.tasks.findByPath("preprocess${cName}Resources")?.let { dependsOn(it) }
-                    source = inherited.files(inheritedSourceSet.resources.srcDirs)
+                    source = inherited.files(inheritedSourceSet.resources.srcDirs.filter { !it.name.contains("specific") })
                     overwrites = overwriteResources
                     generated = preprocessedRoot.resolve("resources")
                     vars.convention(ext.vars)
