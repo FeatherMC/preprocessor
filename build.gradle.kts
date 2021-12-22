@@ -15,13 +15,13 @@
  */
 
 plugins {
+    kotlin("jvm") version "1.6.10"
     `kotlin-dsl`
     `maven-publish`
-    groovy
 }
 
 group = "com.github.replaymod"
-version = "SNAPSHOT"
+version = "perftest-SNAPSHOT"
 
 val kotestVersion: String by project.extra
 
@@ -39,8 +39,12 @@ gradlePlugin {
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_1_8
-    targetCompatibility = JavaVersion.VERSION_1_8
+    sourceCompatibility = JavaVersion.VERSION_16
+    targetCompatibility = JavaVersion.VERSION_16
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    kotlinOptions.jvmTarget = "16"
 }
 
 tasks.withType<Test> {
@@ -56,8 +60,7 @@ repositories {
 
 dependencies {
     implementation(gradleApi())
-    compile(localGroovy())
-    implementation("com.github.replaymod:remap:f9fe968")
+    implementation("com.github.replaymod:remap:perftest-SNAPSHOT")
     implementation("net.fabricmc:tiny-mappings-parser:0.2.1.13")
     testImplementation("io.kotest:kotest-runner-junit5-jvm:$kotestVersion")
     testImplementation("io.kotest:kotest-assertions-core-jvm:$kotestVersion")

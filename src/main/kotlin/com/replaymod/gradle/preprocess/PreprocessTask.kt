@@ -10,6 +10,7 @@ import org.gradle.api.GradleException
 import org.gradle.api.file.ConfigurableFileTree
 import org.gradle.api.file.FileCollection
 import org.gradle.api.tasks.*
+import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.compile.AbstractCompile
 import org.gradle.kotlin.dsl.mapProperty
 import org.gradle.kotlin.dsl.property
@@ -20,42 +21,45 @@ import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.Serializable
 import java.nio.file.Files
+import java.util.*
 import java.util.regex.Pattern
+import java.util.stream.StreamSupport
 
 data class Keywords(
-        val disableRemap: String,
-        val enableRemap: String,
-        val `if`: String,
-        val ifdef: String,
-        val elseif: String,
-        val `else`: String,
-        val endif: String,
-        val eval: String
+    val disableRemap: String,
+    val enableRemap: String,
+    val `if`: String,
+    val ifdef: String,
+    val elseif: String,
+    val `else`: String,
+    val endif: String,
+    val eval: String
 ) : Serializable
 
 open class PreprocessTask : DefaultTask() {
     companion object {
         @JvmStatic
         val DEFAULT_KEYWORDS = Keywords(
-                disableRemap = "//#disable-remap",
-                enableRemap = "//#enable-remap",
-                `if` = "//#if ",
-                ifdef = "//#ifdef ",
-                elseif = "//#elseif",
-                `else` = "//#else",
-                endif = "//#endif",
-                eval = "//$$"
+            disableRemap = "//#disable-remap",
+            enableRemap = "//#enable-remap",
+            `if` = "//#if ",
+            ifdef = "//#ifdef ",
+            elseif = "//#elseif",
+            `else` = "//#else",
+            endif = "//#endif",
+            eval = "//$$"
         )
+
         @JvmStatic
         val CFG_KEYWORDS = Keywords(
-                disableRemap = "##disable-remap",
-                enableRemap = "##enable-remap",
-                `if` = "##if ",
-                ifdef = "##ifdef ",
-                elseif = "##elseif",
-                `else` = "##else",
-                endif = "##endif",
-                eval = "#$$"
+            disableRemap = "##disable-remap",
+            enableRemap = "##enable-remap",
+            `if` = "##if ",
+            ifdef = "##ifdef ",
+            elseif = "##elseif",
+            `else` = "##else",
+            endif = "##endif",
+            eval = "#$$"
         )
 
         private val LOGGER = LoggerFactory.getLogger(PreprocessTask::class.java)
@@ -140,10 +144,11 @@ open class PreprocessTask : DefaultTask() {
                     val srcMap = sourceMappings!!.readMappings()
                     val dstMap = destinationMappings!!.readMappings()
                     legacyMap.mergeBoth(
-                            // The inner clsMap is to make the join work, the outer one for custom classes (which are not part of
-                            // dstMap and would otherwise be filtered by the join)
-                            srcMap.mergeBoth(clsMap).join(dstMap.reverse()).mergeBoth(clsMap),
-                            MappingSet.create(LegacyMappingSetModelFactory()))
+                        // The inner clsMap is to make the join work, the outer one for custom classes (which are not part of
+                        // dstMap and would otherwise be filtered by the join)
+                        srcMap.mergeBoth(clsMap).join(dstMap.reverse()).mergeBoth(clsMap),
+                        MappingSet.create(LegacyMappingSetModelFactory())
+                    )
                 } else {
                     LegacyMapping.readMappingSet(mapping.toPath(), reverseMapping)
                 }
@@ -175,25 +180,29 @@ open class PreprocessTask : DefaultTask() {
                     null
                 }
             }?.toTypedArray()
-            val sources = mutableMapOf<String, String>()
-            val processedSources = mutableMapOf<String, String>()
-            source.flatMap { base -> project.fileTree(base).map { Pair(base, it) } }.forEach { (base, file) ->
-                if (file.name.endsWith(".java") || file.name.endsWith(".kt")) {
-                    val relPath = base.toPath().relativize(file.toPath())
-                    val text = file.readText()
-                    sources[relPath.toString()] = text
-                    val lines = text.lines()
-                    val kws = keywords.get().entries.find { (ext, _) -> file.name.endsWith(ext) }
-                    if (kws != null) {
-                        processedSources[relPath.toString()] = CommentPreprocessor(vars.get()).convertSource(
+            val sources = Collections.synchronizedMap(mutableMapOf<String, String>())
+            val processedSources = Collections.synchronizedMap(mutableMapOf<String, String>())
+            StreamSupport.stream(source.spliterator(), true)
+                .flatMap { base ->
+                    StreamSupport.stream(project.fileTree(base).spliterator(), false).map { Pair(base, it) }
+                }
+                .forEach { (base, file) ->
+                    if (file.name.endsWith(".java") || file.name.endsWith(".kt")) {
+                        val relPath = base.toPath().relativize(file.toPath())
+                        val text = file.readText()
+                        sources[relPath.toString()] = text
+                        val lines = text.lines()
+                        val kws = keywords.get().entries.find { (ext, _) -> file.name.endsWith(ext) }
+                        if (kws != null) {
+                            processedSources[relPath.toString()] = CommentPreprocessor(vars.get()).convertSource(
                                 kws.value,
                                 lines,
                                 lines.map { Pair(it, emptyList()) },
                                 file.toString()
-                        ).joinToString("\n")
+                            ).joinToString("\n")
+                        }
                     }
                 }
-            }
             overwritesPath?.let { base -> project.fileTree(base).map { Pair(base, it) } }?.forEach { (base, file) ->
                 if (file.name.endsWith(".java") || file.name.endsWith(".kt")) {
                     val relPath = base.relativize(file.toPath())
@@ -206,31 +215,40 @@ open class PreprocessTask : DefaultTask() {
         project.delete(outPath)
 
         val commentPreprocessor = CommentPreprocessor(vars.get())
-        source.flatMap { base -> project.fileTree(base).map { Pair(base, it) } }.forEach { (base, file) ->
-            val relPath = base.toPath().relativize(file.toPath())
-            val outFile = outPath.resolve(relPath).toFile()
-            if (overwritesPath != null && Files.exists(overwritesPath.resolve(relPath))) {
-                return@forEach
+        StreamSupport.stream(source.spliterator(), true)
+            .flatMap { base ->
+                StreamSupport.stream(project.fileTree(base).spliterator(), false).map { Pair(base, it) }
             }
-            val kws = keywords.get().entries.find { (ext, _) -> file.name.endsWith(ext) }
-            if (kws != null) {
-                val javaTransform = { lines: List<String> ->
-                    mappedSources?.get(relPath.toString())?.let { (source, errors) ->
-                        val errorsByLine = mutableMapOf<Int, MutableList<String>>()
-                        for ((line, error) in errors) {
-                            errorsByLine.getOrPut(line, ::mutableListOf).add(error)
-                        }
-                        source.lines().mapIndexed { index: Int, line: String -> Pair(line, errorsByLine[index] ?: emptyList<String>()) }
-                    } ?: lines.map { Pair(it, emptyList()) }
+            .forEach { (base, file) ->
+                val relPath = base.toPath().relativize(file.toPath())
+                val outFile = outPath.resolve(relPath).toFile()
+                if (overwritesPath != null && Files.exists(overwritesPath.resolve(relPath))) {
+                    return@forEach
                 }
-                commentPreprocessor.convertFile(kws.value, file, outFile, javaTransform)
-            } else {
-                project.copy {
-                    from(file)
-                    into(outFile.parentFile)
+                val kws = keywords.get().entries.find { (ext, _) -> file.name.endsWith(ext) }
+                if (kws != null) {
+                    val javaTransform = { lines: List<String> ->
+                        mappedSources?.get(relPath.toString())?.let { (source, errors) ->
+                            val errorsByLine = mutableMapOf<Int, MutableList<String>>()
+                            for ((line, error) in errors) {
+                                errorsByLine.getOrPut(line, ::mutableListOf).add(error)
+                            }
+                            source.lines().mapIndexed { index: Int, line: String ->
+                                Pair(
+                                    line,
+                                    errorsByLine[index] ?: emptyList<String>()
+                                )
+                            }
+                        } ?: lines.map { Pair(it, emptyList()) }
+                    }
+                    commentPreprocessor.convertFile(kws.value, file, outFile, javaTransform)
+                } else {
+                    project.copy {
+                        from(file)
+                        into(outFile.parentFile)
+                    }
                 }
             }
-        }
 
         if (commentPreprocessor.fail) {
             throw GradleException("Failed to remap sources. See errors above for details.")
@@ -288,7 +306,12 @@ class CommentPreprocessor(private val vars: Map<String, Int>) {
     private val String.indentation: Int
         get() = takeWhile { it == ' ' }.length
 
-    fun convertSource(kws: Keywords, lines: List<String>, remapped: List<Pair<String, List<String>>>, fileName: String): List<String> {
+    fun convertSource(
+        kws: Keywords,
+        lines: List<String>,
+        remapped: List<Pair<String, List<String>>>,
+        fileName: String
+    ): List<String> {
         val stack = mutableListOf<IfStackEntry>()
         val indentStack = mutableListOf<Int>()
         var active = true
@@ -411,7 +434,12 @@ class CommentPreprocessor(private val vars: Map<String, Int>) {
         }
     }
 
-    fun convertFile(kws: Keywords, inFile: File, outFile: File, remap: ((List<String>) -> List<Pair<String, List<String>>>)? = null) {
+    fun convertFile(
+        kws: Keywords,
+        inFile: File,
+        outFile: File,
+        remap: ((List<String>) -> List<Pair<String, List<String>>>)? = null
+    ) {
         val string = inFile.readText()
         var lines = string.lines()
         val remapped = remap?.invoke(lines) ?: lines.map { Pair(it, emptyList()) }
@@ -433,5 +461,5 @@ class CommentPreprocessor(private val vars: Map<String, Int>) {
         var trueFound: Boolean = false
     )
 
-    class ParserException(str: String): RuntimeException(str)
+    class ParserException(str: String) : RuntimeException(str)
 }
